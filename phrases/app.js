@@ -136,19 +136,22 @@
       todayContent.innerHTML = `<p class="today-empty">사진을 업로드하면 오늘의 표현이 추천돼요. 아래에서 표현이 담긴 사진을 올려보세요 📸</p>`;
       return;
     }
+    const expr = extractField(phrase.content, 'Expression');
+    const meaning = extractField(phrase.content, 'Meaning');
+    const example = extractField(phrase.content, 'Example');
     todayContent.innerHTML = `
       <div class="expr-row">
-        <div class="expr">${escapeHtml(phrase.expr)}</div>
+        <div class="expr">${escapeHtml(expr)}</div>
         <button class="speak-btn" id="todaySpeakBtn" aria-label="발음 듣기">🔊</button>
       </div>
-      ${phrase.meaning ? `<div class="meaning">${escapeHtml(phrase.meaning)}</div>` : ''}
-      ${phrase.example ? `<div class="example">"${escapeHtml(phrase.example)}"</div>` : ''}
+      ${meaning ? `<div class="meaning">${escapeHtml(meaning)}</div>` : ''}
+      ${example ? `<div class="example">"${escapeHtml(example)}"</div>` : ''}
       <div class="refresh-row">
         <button class="today-refresh" id="todayRefreshBtn">🔀 다른 표현 보기</button>
       </div>
     `;
     document.getElementById('todaySpeakBtn').addEventListener('click', (e) => {
-      speak(phrase.expr, e.currentTarget);
+      speak(expr, e.currentTarget);
     });
     document.getElementById('todayRefreshBtn').addEventListener('click', () => {
       renderToday({ forceReroll: true });
@@ -165,16 +168,21 @@
       .replace(/'/g, '&#39;');
   }
 
+  // Phrases are stored as one combined "content" field
+  // ("Expression: ...\nMeaning: ...\nExample: ...") rather than separate
+  // columns; this pulls a single labeled line back out for display/TTS.
+  function extractField(content, label) {
+    const re = new RegExp('^' + label + ':\\s*(.*)$', 'im');
+    const m = (content || '').match(re);
+    return m ? m[1].trim() : '';
+  }
+
   function renderList() {
     const query = searchInput.value.trim().toLowerCase();
     let list = phrases.slice().sort((a, b) => b.createdAt - a.createdAt);
 
     if (query) {
-      list = list.filter(p =>
-        (p.expr || '').toLowerCase().includes(query) ||
-        (p.meaning || '').toLowerCase().includes(query) ||
-        (p.example || '').toLowerCase().includes(query)
-      );
+      list = list.filter(p => (p.content || '').toLowerCase().includes(query));
     }
 
     countBadge.textContent = `${phrases.length}개`;
@@ -189,20 +197,25 @@
     }
     emptyState.style.display = 'none';
 
-    phraseListEl.innerHTML = list.map(p => `
+    phraseListEl.innerHTML = list.map(p => {
+      const expr = extractField(p.content, 'Expression');
+      const meaning = extractField(p.content, 'Meaning');
+      const example = extractField(p.content, 'Example');
+      return `
       <div class="phrase-card" data-id="${p.id}">
         <div class="top-row">
-          <div class="expr">${escapeHtml(p.expr)}</div>
+          <div class="expr">${escapeHtml(expr)}</div>
           <button class="mini-speak" aria-label="발음 듣기" data-action="speak">🔊</button>
         </div>
-        ${p.meaning ? `<div class="meaning">${escapeHtml(p.meaning)}</div>` : ''}
-        ${p.example ? `<div class="example">"${escapeHtml(p.example)}"</div>` : ''}
+        ${meaning ? `<div class="meaning">${escapeHtml(meaning)}</div>` : ''}
+        ${example ? `<div class="example">"${escapeHtml(example)}"</div>` : ''}
         <div class="bottom-row">
           <span class="src-tag">${p.source ? '📷 사진에서 추가됨' : ''}</span>
           <button class="del-btn" data-action="delete">삭제</button>
         </div>
       </div>
-    `).join('');
+    `;
+    }).join('');
   }
 
   phraseListEl.addEventListener('click', (e) => {
@@ -211,11 +224,12 @@
     const id = card.dataset.id;
     const phrase = phrases.find(p => p.id === id);
     if (!phrase) return;
+    const expr = extractField(phrase.content, 'Expression');
 
     if (e.target.closest('[data-action="speak"]')) {
-      speak(phrase.expr, e.target.closest('[data-action="speak"]'));
+      speak(expr, e.target.closest('[data-action="speak"]'));
     } else if (e.target.closest('[data-action="delete"]')) {
-      if (confirm(`'${phrase.expr}' 표현을 삭제할까요?`)) {
+      if (confirm(`'${expr}' 표현을 삭제할까요?`)) {
         phrases = phrases.filter(p => p.id !== id);
         savePhrases(phrases);
         renderList();
@@ -240,11 +254,23 @@
   /* ---------- OCR parsing ---------- */
   const HANGUL_RE = /[가-힣]/;
 
+  // Every source photo has the same 3-line layout (expression / meaning /
+  // example), with the meaning and example lines prefixed by a bullet-style
+  // symbol rather than a word. Strip any leading run of non-letter,
+  // non-digit characters (bullets, dashes, arrows, colons, emoji, ...) so
+  // only the actual text remains, regardless of which symbol was used.
+  function stripLeadingSymbol(line) {
+    return line
+      .replace(/^(뜻|의미|해석|설명|meaning|예문|예시|example|ex)\s*[:\-\.]?\s*/i, '')
+      .replace(/^[^\p{L}\p{N}]+/u, '')
+      .trim();
+  }
+
   function parseBlockToPhrase(blockLines, sourceTag) {
     const lines = blockLines.map(l => l.trim()).filter(Boolean);
     if (!lines.length) return null;
 
-    const expr = lines[0].replace(/^[\-\*•\d\.\)\s]+/, '').trim();
+    const expr = stripLeadingSymbol(lines[0]);
     const rest = lines.slice(1);
 
     const meaningLines = [];
@@ -252,33 +278,39 @@
     let exampleStarted = false;
 
     for (const line of rest) {
-      const meaningTag = line.match(/^(뜻|의미|해석|설명|meaning)\s*[:\-]\s*(.*)$/i);
-      const exampleTag = line.match(/^(예문|예시|example|ex)\s*[:\-\.]?\s*(.*)$/i);
+      const isExampleTag = /^(예문|예시|example|ex)\s*[:\-\.]?/i.test(line);
+      const isMeaningTag = /^(뜻|의미|해석|설명|meaning)\s*[:\-]?/i.test(line);
+      const cleaned = stripLeadingSymbol(line);
+      if (!cleaned) continue;
 
-      if (exampleTag) {
+      if (isExampleTag) {
         exampleStarted = true;
-        if (exampleTag[2]) exampleLines.push(exampleTag[2]);
-        continue;
-      }
-      if (meaningTag) {
-        if (meaningTag[2]) meaningLines.push(meaningTag[2]);
-        continue;
-      }
-      if (exampleStarted) {
-        exampleLines.push(line);
+        exampleLines.push(cleaned);
+      } else if (isMeaningTag) {
+        meaningLines.push(cleaned);
+      } else if (exampleStarted) {
+        exampleLines.push(cleaned);
       } else if (HANGUL_RE.test(line)) {
-        meaningLines.push(line);
+        meaningLines.push(cleaned);
       } else {
         exampleStarted = true;
-        exampleLines.push(line);
+        exampleLines.push(cleaned);
       }
     }
 
+    const meaning = meaningLines.join(' ').trim();
+    const example = exampleLines.join(' ').trim();
+    if (!expr) return null;
+
+    const content = [
+      `Expression: ${expr}`,
+      `Meaning: ${meaning}`,
+      `Example: ${example}`,
+    ].join('\n');
+
     return {
       id: uid(),
-      expr,
-      meaning: meaningLines.join(' ').trim(),
-      example: exampleLines.join(' ').trim(),
+      content,
       source: sourceTag || '',
       createdAt: Date.now() + Math.floor(Math.random() * 1000),
     };
@@ -289,7 +321,7 @@
     const results = [];
     blocks.forEach((block, i) => {
       const parsed = parseBlockToPhrase(block.split('\n'), `사진 ${i + 1}`);
-      if (parsed && parsed.expr) results.push(parsed);
+      if (parsed) results.push(parsed);
     });
     return results;
   }
