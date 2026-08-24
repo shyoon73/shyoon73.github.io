@@ -48,6 +48,7 @@
   }
 
   let phrases = loadPhrases();
+  let editingId = null;
 
   /* ---------- Toast ---------- */
   let toastTimer = null;
@@ -198,6 +199,17 @@
     emptyState.style.display = 'none';
 
     phraseListEl.innerHTML = list.map(p => {
+      if (p.id === editingId) {
+        return `
+      <div class="phrase-card editing" data-id="${p.id}">
+        <textarea class="edit-textarea">${escapeHtml(p.content)}</textarea>
+        <div class="edit-actions">
+          <button class="btn btn-ghost btn-sm" data-action="cancel-edit">취소</button>
+          <button class="btn btn-primary btn-sm" data-action="save-edit">저장</button>
+        </div>
+      </div>
+    `;
+      }
       const expr = extractField(p.content, 'Expression');
       const meaning = extractField(p.content, 'Meaning');
       const example = extractField(p.content, 'Example');
@@ -211,7 +223,10 @@
         ${example ? `<div class="example">"${escapeHtml(example)}"</div>` : ''}
         <div class="bottom-row">
           <span class="src-tag">${p.source ? '📷 사진에서 추가됨' : ''}</span>
-          <button class="del-btn" data-action="delete">삭제</button>
+          <div class="card-actions">
+            <button class="edit-btn" data-action="edit">수정</button>
+            <button class="del-btn" data-action="delete">삭제</button>
+          </div>
         </div>
       </div>
     `;
@@ -224,14 +239,40 @@
     const id = card.dataset.id;
     const phrase = phrases.find(p => p.id === id);
     if (!phrase) return;
-    const expr = extractField(phrase.content, 'Expression');
 
+    if (e.target.closest('[data-action="edit"]')) {
+      editingId = id;
+      renderList();
+      return;
+    }
+    if (e.target.closest('[data-action="cancel-edit"]')) {
+      editingId = null;
+      renderList();
+      return;
+    }
+    if (e.target.closest('[data-action="save-edit"]')) {
+      const newContent = card.querySelector('.edit-textarea').value.trim();
+      if (!newContent) {
+        showToast('내용을 입력해주세요');
+        return;
+      }
+      phrase.content = newContent;
+      savePhrases(phrases);
+      editingId = null;
+      renderList();
+      renderToday();
+      showToast('수정했어요');
+      return;
+    }
+
+    const expr = extractField(phrase.content, 'Expression');
     if (e.target.closest('[data-action="speak"]')) {
       speak(expr, e.target.closest('[data-action="speak"]'));
     } else if (e.target.closest('[data-action="delete"]')) {
       if (confirm(`'${expr}' 표현을 삭제할까요?`)) {
         phrases = phrases.filter(p => p.id !== id);
         savePhrases(phrases);
+        if (editingId === id) editingId = null;
         renderList();
         renderToday();
         showToast('삭제했어요');
@@ -257,8 +298,18 @@
   // the example wraps) is the example. Label them positionally right after
   // extraction so the review textarea already shows Expression:/Meaning:/
   // Example: — no word/symbol-based guessing needed.
+  // Drop lines that don't contain any actual letter/digit — these are
+  // almost always decorative icons, dividers, or stray symbols that OCR
+  // mistakes for a line of text, not real content.
+  function isNoiseLine(line) {
+    return !/[\p{L}\p{N}]/u.test(line);
+  }
+
   function labelExtractedText(rawText) {
-    const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+    const lines = rawText.split('\n')
+      .map(l => l.trim())
+      .filter(Boolean)
+      .filter(l => !isNoiseLine(l));
     if (!lines.length) return '';
     const expr = lines[0] || '';
     const meaning = lines[1] || '';
