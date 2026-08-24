@@ -273,8 +273,8 @@
 
       <div class="review-box" id="reviewBox">
         <p class="section-title" style="margin-top:14px;">인식된 텍스트 (필요하면 직접 수정하세요)</p>
-        <textarea id="ocrTextarea" placeholder="표현 / 뜻 / 예문 형태로 줄바꿈되어 인식됩니다"></textarea>
-        <p class="hint">한 표현당 여러 줄을 사용해도 좋아요. 형식: 영어표현 → 뜻 해설 → 예문 (문장 부호로 대략 구분해서 저장돼요). 저장 전에 자유롭게 다듬을 수 있어요.</p>
+        <textarea id="ocrTextarea" placeholder="Expression: ...&#10;Meaning: ...&#10;Example: ..."></textarea>
+        <p class="hint">사진에서 인식된 첫째 줄은 Expression, 둘째 줄은 Meaning, 셋째 줄은 Example로 자동 표시돼요. 자유롭게 수정한 뒤 저장하면 이 내용 전체가 하나의 표현으로 저장됩니다.</p>
         <div class="review-actions">
           <button class="btn btn-ghost" id="cancelReviewBtn">취소</button>
           <button class="btn btn-primary" id="saveReviewBtn">표현으로 저장</button>

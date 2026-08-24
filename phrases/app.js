@@ -251,79 +251,23 @@
     searchInput.focus();
   });
 
-  /* ---------- OCR parsing ---------- */
-  const HANGUL_RE = /[가-힣]/;
-
-  // Every source photo has the same 3-line layout (expression / meaning /
-  // example), with the meaning and example lines prefixed by a bullet-style
-  // symbol rather than a word. Strip any leading run of non-letter,
-  // non-digit characters (bullets, dashes, arrows, colons, emoji, ...) so
-  // only the actual text remains, regardless of which symbol was used.
-  function stripLeadingSymbol(line) {
-    return line
-      .replace(/^(뜻|의미|해석|설명|meaning|예문|예시|example|ex)\s*[:\-\.]?\s*/i, '')
-      .replace(/^[^\p{L}\p{N}]+/u, '')
-      .trim();
-  }
-
-  function parseBlockToPhrase(blockLines, sourceTag) {
-    const lines = blockLines.map(l => l.trim()).filter(Boolean);
-    if (!lines.length) return null;
-
-    const expr = stripLeadingSymbol(lines[0]);
-    const rest = lines.slice(1);
-
-    const meaningLines = [];
-    const exampleLines = [];
-    let exampleStarted = false;
-
-    for (const line of rest) {
-      const isExampleTag = /^(예문|예시|example|ex)\s*[:\-\.]?/i.test(line);
-      const isMeaningTag = /^(뜻|의미|해석|설명|meaning)\s*[:\-]?/i.test(line);
-      const cleaned = stripLeadingSymbol(line);
-      if (!cleaned) continue;
-
-      if (isExampleTag) {
-        exampleStarted = true;
-        exampleLines.push(cleaned);
-      } else if (isMeaningTag) {
-        meaningLines.push(cleaned);
-      } else if (exampleStarted) {
-        exampleLines.push(cleaned);
-      } else if (HANGUL_RE.test(line)) {
-        meaningLines.push(cleaned);
-      } else {
-        exampleStarted = true;
-        exampleLines.push(cleaned);
-      }
-    }
-
-    const meaning = meaningLines.join(' ').trim();
-    const example = exampleLines.join(' ').trim();
-    if (!expr) return null;
-
-    const content = [
+  /* ---------- OCR text labeling ---------- */
+  // Every source photo has the same 3-line layout: line 1 is the
+  // expression, line 2 is the meaning, line 3 (and anything after, in case
+  // the example wraps) is the example. Label them positionally right after
+  // extraction so the review textarea already shows Expression:/Meaning:/
+  // Example: — no word/symbol-based guessing needed.
+  function labelExtractedText(rawText) {
+    const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return '';
+    const expr = lines[0] || '';
+    const meaning = lines[1] || '';
+    const example = lines.slice(2).join(' ');
+    return [
       `Expression: ${expr}`,
       `Meaning: ${meaning}`,
       `Example: ${example}`,
     ].join('\n');
-
-    return {
-      id: uid(),
-      content,
-      source: sourceTag || '',
-      createdAt: Date.now() + Math.floor(Math.random() * 1000),
-    };
-  }
-
-  function parseFullText(fullText) {
-    const blocks = fullText.split(/\n\s*\n|\n-{3,}\n/).map(b => b.trim()).filter(Boolean);
-    const results = [];
-    blocks.forEach((block, i) => {
-      const parsed = parseBlockToPhrase(block.split('\n'), `사진 ${i + 1}`);
-      if (parsed) results.push(parsed);
-    });
-    return results;
   }
 
   /* ---------- Upload + OCR flow ---------- */
@@ -405,7 +349,7 @@
           },
         });
 
-        combinedText += (combinedText ? '\n\n---\n\n' : '') + (data.text || '').trim();
+        combinedText += (combinedText ? '\n\n' : '') + labelExtractedText(data.text || '');
       }
 
       ocrStatus.textContent = '인식 완료!';
@@ -438,12 +382,15 @@
       showToast('저장할 텍스트가 없어요');
       return;
     }
-    const newPhrases = parseFullText(text);
-    if (!newPhrases.length) {
-      showToast('표현을 인식하지 못했어요. 텍스트를 확인해주세요.');
-      return;
-    }
-    phrases = phrases.concat(newPhrases);
+    // Whatever is in the (possibly hand-edited) textarea is saved as-is,
+    // as a single phrase entry — it's never split back apart.
+    const phrase = {
+      id: uid(),
+      content: text,
+      source: pendingFiles.length ? `사진 ${pendingFiles.length}장` : '',
+      createdAt: Date.now(),
+    };
+    phrases = phrases.concat([phrase]);
     savePhrases(phrases);
     renderList();
     renderToday();
@@ -454,7 +401,7 @@
     fileInput.value = '';
     pendingFiles = [];
 
-    showToast(`${newPhrases.length}개의 표현을 저장했어요`);
+    showToast('표현을 저장했어요');
   });
 
   /* ---------- PWA install prompt ---------- */
