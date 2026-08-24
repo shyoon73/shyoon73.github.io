@@ -183,6 +183,11 @@
   section.list-section{margin-top:20px;}
   .list-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:0 2px;}
   .list-head .section-title{margin:0;}
+  .list-head-actions{display:flex;align-items:center;gap:8px;}
+  .export-btn{
+    border:none;background:var(--accent-soft);color:var(--accent);
+    font-size:12px;font-weight:700;padding:5px 11px;border-radius:999px;cursor:pointer;
+  }
   .count-badge{
     font-size:12px;color:var(--text-sub);background:var(--bg-soft);
     border-radius:999px;padding:3px 10px;font-weight:600;
@@ -306,7 +311,10 @@
   <section class="list-section">
     <div class="list-head">
       <p class="section-title">모아둔 표현</p>
-      <span class="count-badge" id="countBadge">0개</span>
+      <div class="list-head-actions">
+        <button class="export-btn" id="exportBtn">⬇️ 내보내기</button>
+        <span class="count-badge" id="countBadge">0개</span>
+      </div>
     </div>
     <div class="phrase-list" id="phraseList"></div>
     <div class="empty-state" id="emptyState">

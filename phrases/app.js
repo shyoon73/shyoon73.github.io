@@ -24,6 +24,7 @@
   const phraseListEl = document.getElementById('phraseList');
   const emptyState = document.getElementById('emptyState');
   const countBadge = document.getElementById('countBadge');
+  const exportBtn = document.getElementById('exportBtn');
 
   const toastEl = document.getElementById('toast');
   const installBtn = document.getElementById('installBtn');
@@ -292,6 +293,27 @@
     searchInput.focus();
   });
 
+  /* ---------- Export ---------- */
+  exportBtn.addEventListener('click', () => {
+    if (!phrases.length) {
+      showToast('내보낼 표현이 없어요');
+      return;
+    }
+    const sorted = phrases.slice().sort((a, b) => a.createdAt - b.createdAt);
+    const text = sorted.map(p => p.content).join('\n\n---\n\n');
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const stamp = new Date().toISOString().slice(0, 10);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `phrases_${stamp}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast(`${sorted.length}개의 표현을 내보냈어요`);
+  });
+
   /* ---------- OCR text labeling ---------- */
   // Every source photo has the same 3-line layout: line 1 is the
   // expression, line 2 is the meaning, line 3 (and anything after, in case
@@ -305,6 +327,12 @@
     return !/[\p{L}\p{N}]/u.test(line);
   }
 
+  // The meaning and example lines are printed with a leading bullet/marker
+  // character in the source photos; drop just that first character.
+  function dropFirstChar(str) {
+    return str ? str.slice(1).trim() : '';
+  }
+
   function labelExtractedText(rawText) {
     const lines = rawText.split('\n')
       .map(l => l.trim())
@@ -312,8 +340,11 @@
       .filter(l => !isNoiseLine(l));
     if (!lines.length) return '';
     const expr = lines[0] || '';
-    const meaning = lines[1] || '';
-    const example = lines.slice(2).join(' ');
+    const meaning = dropFirstChar(lines[1]);
+    const exampleLines = lines.slice(2);
+    const example = exampleLines.length
+      ? [dropFirstChar(exampleLines[0]), ...exampleLines.slice(1)].join(' ').trim()
+      : '';
     return [
       `Expression: ${expr}`,
       `Meaning: ${meaning}`,
